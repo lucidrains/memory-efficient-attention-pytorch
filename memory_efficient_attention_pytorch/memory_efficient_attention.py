@@ -44,6 +44,20 @@ def attention(
 
 # memory efficient attention
 
+def safe_sum(acc, el):
+    if not exists(acc):
+        return el
+    return acc + el
+
+def summarize_qkv_chunk(
+    q, k, v,
+    mask = None
+):
+    weight = einsum('b h i d, b h j d -> b h i j', q, k)
+    exp_weight = weight.exp()
+    weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
+    return exp_weight.sum(dim = -1), weighted_value
+
 def memory_efficient_attention(
     q, k, v,
     mask = None,
@@ -51,7 +65,39 @@ def memory_efficient_attention(
     q_bucket_size = 512,
     k_bucket_size = 1024
 ):
-    return q
+    scale = q.shape[-1] ** -0.5
+    q = q * scale
+
+    # chunk all the inputs
+
+    q_chunks = q.split(q_bucket_size, dim = -2)
+    k_chunks = k.split(k_bucket_size, dim = -2)
+    v_chunks = v.split(k_bucket_size, dim = -2)
+    mask_chunks = mask.split(k_bucket_size, dim = -2) if exists(mask) else ((None,) * len(k_chunks))
+
+    # loop through all chunks and accumulate
+
+    out = []
+    for q_chunk in q_chunks:
+        exp_weights = None
+        weighted_values = None
+
+        for k_chunk, v_chunk, mask_chunk in zip(k_chunks, v_chunks, mask_chunks):
+
+            exp_weight_chunk, weighted_value_chunk = summarize_qkv_chunk(
+                q = q_chunk,
+                k = k_chunk,
+                v = v_chunk,
+                mask = mask_chunk
+            )
+
+            exp_weights = safe_sum(exp_weights, exp_weight_chunk)
+            weighted_values = safe_sum(weighted_values, weighted_value_chunk)
+
+        normalized_values = weighted_values / rearrange(exp_weights, '... -> ... 1')
+        out.append(normalized_values)
+
+    return torch.cat(out, dim = -2)
 
 # main class
 
