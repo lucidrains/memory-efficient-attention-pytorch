@@ -1,4 +1,5 @@
 import torch
+from functools import partial
 from torch import nn, einsum
 from torch.utils.checkpoint import checkpoint
 
@@ -49,10 +50,7 @@ def safe_sum(acc, el):
         return el
     return acc + el
 
-def summarize_qkv_chunk(
-    q, k, v,
-    mask = None
-):
+def summarize_qkv_chunk(q, k, v, mask):
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
     exp_weight = weight.exp()
 
@@ -62,6 +60,8 @@ def summarize_qkv_chunk(
 
     weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
     return exp_weight.sum(dim = -1), weighted_value
+
+checkpointed_summarize_qkv_chunk = partial(checkpoint, summarize_qkv_chunk)
 
 def memory_efficient_attention(
     q, k, v,
@@ -89,11 +89,11 @@ def memory_efficient_attention(
 
         for k_chunk, v_chunk, mask_chunk in zip(k_chunks, v_chunks, mask_chunks):
 
-            exp_weight_chunk, weighted_value_chunk = summarize_qkv_chunk(
-                q = q_chunk,
-                k = k_chunk,
-                v = v_chunk,
-                mask = mask_chunk
+            exp_weight_chunk, weighted_value_chunk = checkpointed_summarize_qkv_chunk(
+                q_chunk,
+                k_chunk,
+                v_chunk,
+                mask_chunk
             )
 
             exp_weights = safe_sum(exp_weights, exp_weight_chunk)
