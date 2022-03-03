@@ -15,7 +15,14 @@ setup(
     'attention-mechanism'
   ],
   install_requires=[
+    'einops>=0.3,<0.4',
     'torch>=1.6'    
+  ],
+  setup_requires=[
+    'pytest-runner',
+  ],
+  tests_require=[
+    'pytest'
   ],
   classifiers=[
     'Development Status :: 4 - Beta',
