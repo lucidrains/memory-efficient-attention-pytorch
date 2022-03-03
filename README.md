@@ -1,6 +1,6 @@
 ## Memory Efficient Attention Pytorch (wip)
 
-Implementation of a memory efficient attention as proposed in the paper, <a href="https://arxiv.org/abs/2112.05682">Self-attention Does Not Need O(n2) Memory</a>
+Implementation of a memory efficient multi-head attention as proposed in the paper, <a href="https://arxiv.org/abs/2112.05682">Self-attention Does Not Need O(n2) Memory</a>
 
 ## Citations
 
