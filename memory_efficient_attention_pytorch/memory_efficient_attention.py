@@ -1,5 +1,7 @@
 import torch
 from torch import nn, einsum
+from torch.utils.checkpoint import checkpoint
+
 from einops import rearrange
 
 # helper functions
@@ -15,7 +17,8 @@ def default(val, d):
 def attention(
     q, k, v,
     mask = None,
-    causal = False
+    causal = False,
+    **kwargs
 ):
     scale = q.shape[-1] ** -0.5
     q = q * scale
@@ -39,6 +42,17 @@ def attention(
     out = einsum('b h i j, b h j d -> b h i d', attn, v)
     return out
 
+# memory efficient attention
+
+def memory_efficient_attention(
+    q, k, v,
+    mask = None,
+    causal = False,
+    q_bucket_size = 512,
+    k_bucket_size = 1024
+):
+    return q
+
 # main class
 
 class Attention(nn.Module):
@@ -49,19 +63,41 @@ class Attention(nn.Module):
         heads = 8,
         dim_head = 64,
         dropout = 0.,
-        causal = False
+        causal = False,
+        memory_efficient = False,
+        q_bucket_size = 512,
+        k_bucket_size = 1024
     ):
         super().__init__()
         self.heads = heads
         self.causal = causal
         self.scale = dim_head ** -0.5
+
         inner_dim = heads * dim_head
 
         self.to_q = nn.Linear(dim, inner_dim, bias = False)
         self.to_kv = nn.Linear(dim, inner_dim * 2, bias = False)
         self.to_out = nn.Linear(inner_dim, dim)
 
-    def forward(self, x, context = None, mask = None):
+        # memory efficient attention related parameters
+        # can be overriden on forward
+        self.memory_efficient = memory_efficient
+        self.q_bucket_size = q_bucket_size
+        self.k_bucket_size = k_bucket_size
+
+    def forward(
+        self,
+        x,
+        context = None,
+        mask = None,
+        memory_efficient = None,
+        q_bucket_size = None,
+        k_bucket_size = None
+    ):
+        memory_efficient = default(memory_efficient, self.memory_efficient)
+        q_bucket_size = default(q_bucket_size, self.q_bucket_size)
+        k_bucket_size = default(k_bucket_size, self.k_bucket_size)
+
         h = self.heads
         context = default(context, x)
 
@@ -72,7 +108,9 @@ class Attention(nn.Module):
 
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
 
-        out = attention(q, k, v, mask = mask, causal = self.causal)
+        attn_fn = attention if not memory_efficient else memory_efficient_attention
+
+        out = attn_fn(q, k, v, mask = mask, causal = self.causal, q_bucket_size = q_bucket_size, k_bucket_size = k_bucket_size)
 
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
