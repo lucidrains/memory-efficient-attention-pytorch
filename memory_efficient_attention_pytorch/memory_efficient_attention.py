@@ -31,7 +31,7 @@ def attention(
 
     if exists(mask):
         mask = rearrange(mask, 'b j -> b 1 1 j')
-        sim = sim.masked_fill(mask, mask_value)
+        sim = sim.masked_fill(~mask, mask_value)
 
     if causal:
         i, j = sim.shape[-2:]
@@ -50,14 +50,18 @@ def safe_sum(acc, el):
         return el
     return acc + el
 
-def summarize_qkv_chunk(q, k, v, mask):
+def summarize_qkv_chunk(q, k, v, mask, causal_mask):
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
-    exp_weight = weight.exp()
+    mask_value = -torch.finfo(weight.dtype).max
 
     if exists(mask):
         mask = rearrange(mask, 'b j -> b 1 1 j')
-        exp_weight = exp_weight.masked_fill(mask, 0.)
+        weight = weight.masked_fill(~mask, mask_value)
 
+    if exists(causal_mask):
+        weight = weight.masked_fill(causal_mask, mask_value)
+
+    exp_weight = weight.exp()
     weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
     return exp_weight.sum(dim = -1), weighted_value
 
@@ -68,7 +72,8 @@ def memory_efficient_attention(
     mask = None,
     causal = False,
     q_bucket_size = 512,
-    k_bucket_size = 1024
+    k_bucket_size = 1024,
+    eps = 1e-8
 ):
     scale = q.shape[-1] ** -0.5
     q = q * scale
@@ -80,26 +85,38 @@ def memory_efficient_attention(
     v_chunks = v.split(k_bucket_size, dim = -2)
     mask_chunks = mask.split(k_bucket_size, dim = -1) if exists(mask) else ((None,) * len(k_chunks))
 
+    if causal:
+        i, j = q.shape[-2], k.shape[-2]
+        causal_mask = torch.ones(i, j).triu(j - i + 1).bool()
+
     # loop through all chunks and accumulate
 
     out = []
-    for q_chunk in q_chunks:
+    for q_index, q_chunk in enumerate(q_chunks):
         exp_weights = None
         weighted_values = None
 
-        for k_chunk, v_chunk, mask_chunk in zip(k_chunks, v_chunks, mask_chunks):
+        for k_index, (k_chunk, v_chunk, mask_chunk) in enumerate(zip(k_chunks, v_chunks, mask_chunks)):
+
+            causal_mask_chunk = None
+            if causal:
+                causal_mask_chunk = causal_mask[
+                    (q_index * q_bucket_size):(q_index * q_bucket_size + q_bucket_size),
+                    (k_index * k_bucket_size):(k_index * k_bucket_size + k_bucket_size),
+                ]
 
             exp_weight_chunk, weighted_value_chunk = checkpointed_summarize_qkv_chunk(
                 q_chunk,
                 k_chunk,
                 v_chunk,
-                mask_chunk
+                mask_chunk,
+                causal_mask_chunk
             )
 
             exp_weights = safe_sum(exp_weights, exp_weight_chunk)
             weighted_values = safe_sum(weighted_values, weighted_value_chunk)
 
-        normalized_values = weighted_values / rearrange(exp_weights, '... -> ... 1')
+        normalized_values = weighted_values / (rearrange(exp_weights, '... -> ... 1') + eps)
         out.append(normalized_values)
 
     return torch.cat(out, dim = -2)

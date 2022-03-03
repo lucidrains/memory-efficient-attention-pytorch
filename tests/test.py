@@ -19,9 +19,10 @@ def test_output_equal():
     )
 
     x = torch.randn(2, 2048, 512)
+    mask = torch.ones(2, 2048).bool()
 
-    out = attn(x)
-    mem_efficient_out = attn(x, memory_efficient = True)
+    out = attn(x, mask = mask)
+    mem_efficient_out = attn(x, mask = mask, memory_efficient = True)
 
     assert isclose(mem_efficient_out, out)
 
@@ -40,12 +41,13 @@ def test_gradients_equal():
         return attn(inp, **kwargs).sum()
 
     x = torch.randn(2, 2048, 512).requires_grad_()
+    mask = torch.ones(2, 2048).bool()
 
-    loss_fn(x).backward()
+    loss_fn(x, mask = mask).backward()
     out_grad = x.grad.clone()
 
     x.grad.zero_()
-    loss_fn(x, memory_efficient = True).backward()
+    loss_fn(x, mask = mask, memory_efficient = True).backward()
     mem_efficient_out_grad = x.grad.clone()
 
     assert isclose(out_grad, mem_efficient_out_grad)
