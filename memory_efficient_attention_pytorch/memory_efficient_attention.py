@@ -55,6 +55,11 @@ def summarize_qkv_chunk(
 ):
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
     exp_weight = weight.exp()
+
+    if exists(mask):
+        mask = rearrange(mask, 'b j -> b 1 1 j')
+        exp_weight = exp_weight.masked_fill(mask, 0.)
+
     weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
     return exp_weight.sum(dim = -1), weighted_value
 
@@ -73,7 +78,7 @@ def memory_efficient_attention(
     q_chunks = q.split(q_bucket_size, dim = -2)
     k_chunks = k.split(k_bucket_size, dim = -2)
     v_chunks = v.split(k_bucket_size, dim = -2)
-    mask_chunks = mask.split(k_bucket_size, dim = -2) if exists(mask) else ((None,) * len(k_chunks))
+    mask_chunks = mask.split(k_bucket_size, dim = -1) if exists(mask) else ((None,) * len(k_chunks))
 
     # loop through all chunks and accumulate
 
