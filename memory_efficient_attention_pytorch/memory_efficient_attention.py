@@ -45,11 +45,6 @@ def attention(
 
 # memory efficient attention
 
-def safe_sum(acc, el):
-    if not exists(acc):
-        return el
-    return acc + el
-
 def summarize_qkv_chunk(q, k, v, mask, causal_mask):
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
     weight_max = weight.amax(dim = -1, keepdim = True).detach()
