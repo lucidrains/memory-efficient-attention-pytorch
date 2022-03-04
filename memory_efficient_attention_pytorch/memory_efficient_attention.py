@@ -19,12 +19,16 @@ def attention(
     q, k, v,
     mask = None,
     causal = False,
+    attn_bias = None,
     **kwargs
 ):
     scale = q.shape[-1] ** -0.5
     q = q * scale
 
     sim = einsum('b h i d, b h j d -> b h i j', q, k)
+
+    if exists(attn_bias):
+        sim = sim + attn_bias
 
     sim = sim - sim.amax(dim = -1, keepdim = True).detach()
     mask_value = -torch.finfo(sim.dtype).max
@@ -45,8 +49,12 @@ def attention(
 
 # memory efficient attention
 
-def summarize_qkv_chunk(q, k, v, mask, causal_mask):
+def summarize_qkv_chunk(q, k, v, mask, causal_mask, attn_bias_chunk):
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
+
+    if exists(attn_bias_chunk):
+        weight = weight + attn_bias_chunk
+
     weight_max = weight.amax(dim = -1, keepdim = True).detach()
     weight = weight - weight_max
 
@@ -70,6 +78,7 @@ def memory_efficient_attention(
     q, k, v,
     mask = None,
     causal = False,
+    attn_bias = None,
     q_bucket_size = 512,
     k_bucket_size = 1024,
     eps = 1e-8
@@ -90,6 +99,11 @@ def memory_efficient_attention(
         causal_mask_chunks = causal_mask.split(q_bucket_size, dim = 0)
         causal_mask_chunks = list(map(lambda t: t.split(k_bucket_size, dim = -1), causal_mask_chunks))
 
+    if exists(attn_bias):
+        i, j = attn_bias.shape[-2:]
+        attn_bias_chunks = attn_bias.split(q_bucket_size, dim = -2)
+        attn_bias_chunks = list(map(lambda t: t.split(k_bucket_size, dim = -1), attn_bias_chunks))
+
     # loop through all chunks and accumulate
 
     out = []
@@ -106,12 +120,15 @@ def memory_efficient_attention(
                 # if chunk is to be all masked out causally, skip
                 continue
 
+            attn_bias_chunk = attn_bias_chunks[q_index][k_index] if exists(attn_bias) else None
+
             exp_weight_chunk, weighted_value_chunk, weight_max_chunk = checkpointed_summarize_qkv_chunk(
                 q_chunk,
                 k_chunk,
                 v_chunk,
                 mask_chunk,
-                causal_mask_chunk
+                causal_mask_chunk,
+                attn_bias_chunk
             )
 
             exp_weights.append(exp_weight_chunk)
@@ -173,9 +190,10 @@ class Attention(nn.Module):
         x,
         context = None,
         mask = None,
+        attn_bias = None,
         memory_efficient = None,
         q_bucket_size = None,
-        k_bucket_size = None
+        k_bucket_size = None,
     ):
         memory_efficient = default(memory_efficient, self.memory_efficient)
         q_bucket_size = default(q_bucket_size, self.q_bucket_size)
@@ -191,7 +209,7 @@ class Attention(nn.Module):
 
         attn_fn = attention if not memory_efficient else memory_efficient_attention
 
-        out = attn_fn(q, k, v, mask = mask, causal = self.causal, q_bucket_size = q_bucket_size, k_bucket_size = k_bucket_size)
+        out = attn_fn(q, k, v, mask = mask, attn_bias = attn_bias, causal = self.causal, q_bucket_size = q_bucket_size, k_bucket_size = k_bucket_size)
 
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
