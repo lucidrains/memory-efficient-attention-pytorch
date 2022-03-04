@@ -35,7 +35,7 @@ def attention(
 
     if causal:
         i, j = sim.shape[-2:]
-        mask = torch.ones(i, j).triu(j - i + 1).bool()
+        mask = torch.ones(i, j, device = q.device).triu(j - i + 1).bool()
         sim = sim.masked_fill(mask, mask_value)
 
     attn = sim.softmax(dim = -1)
@@ -52,6 +52,9 @@ def safe_sum(acc, el):
 
 def summarize_qkv_chunk(q, k, v, mask, causal_mask):
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
+    weight_max = weight.amax(dim = -1, keepdim = True).detach()
+    weight = weight - weight_max
+
     mask_value = -torch.finfo(weight.dtype).max
 
     if exists(mask):
@@ -60,9 +63,6 @@ def summarize_qkv_chunk(q, k, v, mask, causal_mask):
 
     if exists(causal_mask):
         weight = weight.masked_fill(causal_mask, mask_value)
-
-    weight_max = weight.amax(dim = -1, keepdim = True).detach()
-    weight = weight - weight_max
 
     exp_weight = weight.exp()
     weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
@@ -91,7 +91,9 @@ def memory_efficient_attention(
 
     if causal:
         i, j = q.shape[-2], k.shape[-2]
-        causal_mask = torch.ones(i, j).triu(j - i + 1).bool()
+        causal_mask = torch.ones(i, j, device = q.device).triu(j - i + 1).bool()
+        causal_mask_chunks = causal_mask.split(q_bucket_size, dim = 0)
+        causal_mask_chunks = list(map(lambda t: t.split(k_bucket_size, dim = -1), causal_mask_chunks))
 
     # loop through all chunks and accumulate
 
@@ -103,12 +105,7 @@ def memory_efficient_attention(
 
         for k_index, (k_chunk, v_chunk, mask_chunk) in enumerate(zip(k_chunks, v_chunks, mask_chunks)):
 
-            causal_mask_chunk = None
-            if causal:
-                causal_mask_chunk = causal_mask[
-                    (q_index * q_bucket_size):(q_index * q_bucket_size + q_bucket_size),
-                    (k_index * k_bucket_size):(k_index * k_bucket_size + k_bucket_size),
-                ]
+            causal_mask_chunk = causal_mask_chunks[q_index][k_index] if causal else None
 
             exp_weight_chunk, weighted_value_chunk, weight_max_chunk = checkpointed_summarize_qkv_chunk(
                 q_chunk,

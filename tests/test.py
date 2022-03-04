@@ -15,7 +15,8 @@ def test_output_equal():
         dim_head = 64,
         heads = 8,
         q_bucket_size = 64,
-        k_bucket_size = 64
+        k_bucket_size = 64,
+        causal = True
     )
 
     x = torch.randn(2, 2048, 512)
@@ -24,7 +25,7 @@ def test_output_equal():
     out = attn(x, mask = mask)
     mem_efficient_out = attn(x, mask = mask, memory_efficient = True)
 
-    assert isclose(mem_efficient_out, out)
+    assert isclose(mem_efficient_out, out, atol = 1e-6)
 
 # test gradients equal
 
@@ -34,7 +35,8 @@ def test_gradients_equal():
         dim_head = 64,
         heads = 8,
         q_bucket_size = 64,
-        k_bucket_size = 64
+        k_bucket_size = 64,
+        causal = True
     )
 
     def loss_fn(inp, **kwargs):
@@ -50,4 +52,4 @@ def test_gradients_equal():
     loss_fn(x, mask = mask, memory_efficient = True).backward()
     mem_efficient_out_grad = x.grad.clone()
 
-    assert isclose(out_grad, mem_efficient_out_grad)
+    assert isclose(out_grad, mem_efficient_out_grad, atol = 1e-5)
