@@ -27,9 +27,6 @@ def attention(
     attn_bias = None,
     **kwargs
 ):
-    scale = q.shape[-1] ** -0.5
-    q = q * scale
-
     sim = einsum('b h i d, b h j d -> b h i j', q, k)
 
     if exists(attn_bias):
@@ -84,9 +81,6 @@ def numerically_unstable_memory_efficient_attention(
     k_bucket_size = 1024,
     eps = 1e-8
 ):
-    scale = q.shape[-1] ** -0.5
-    q = q * scale
-
     # chunk all the inputs
 
     q_chunks = q.split(q_bucket_size, dim = -2)
