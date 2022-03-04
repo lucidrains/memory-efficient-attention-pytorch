@@ -40,7 +40,7 @@ def attention(
 
     if causal:
         i, j = sim.shape[-2:]
-        mask = torch.ones(i, j, device = q.device).triu(j - i + 1).bool()
+        mask = torch.ones(i, j, device = q.device, dtype = torch.bool).triu(j - i + 1)
         sim = sim.masked_fill(mask, mask_value)
 
     attn = sim.softmax(dim = -1)
@@ -90,7 +90,7 @@ def numerically_unstable_memory_efficient_attention(
 
     if causal:
         i, j = q.shape[-2], k.shape[-2]
-        causal_mask = torch.ones(i, j, device = q.device).triu(j - i + 1).bool()
+        causal_mask = torch.ones(i, j, device = q.device, dtype = torch.bool).triu(j - i + 1)
         causal_mask_chunks = causal_mask.split(q_bucket_size, dim = 0)
         causal_mask_chunks = list(map(lambda t: t.split(k_bucket_size, dim = -1), causal_mask_chunks))
 
