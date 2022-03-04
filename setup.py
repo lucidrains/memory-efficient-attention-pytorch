@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
   name = 'memory-efficient-attention-pytorch',
   packages = find_packages(exclude=[]),
-  version = '0.0.12',
+  version = '0.0.14',
   license='MIT',
   description = 'Memory Efficient Attention - Pytorch',
   author = 'Phil Wang',
@@ -15,7 +15,7 @@ setup(
     'attention-mechanism'
   ],
   install_requires=[
-    'einops>=0.3,<0.4',
+    'einops>=0.4.1',
     'torch>=1.6'    
   ],
   setup_requires=[

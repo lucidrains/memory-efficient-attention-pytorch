@@ -30,7 +30,6 @@ def attention(
     if exists(attn_bias):
         sim = sim + attn_bias
 
-    sim = sim - sim.amax(dim = -1, keepdim = True).detach()
     mask_value = -torch.finfo(sim.dtype).max
 
     if exists(mask):
@@ -42,6 +41,7 @@ def attention(
         mask = torch.ones(i, j, device = q.device, dtype = torch.bool).triu(j - i + 1)
         sim = sim.masked_fill(mask, mask_value)
 
+    sim = sim - sim.amax(dim = -1, keepdim = True).detach()
     attn = sim.softmax(dim = -1)
 
     out = einsum('b h i j, b h j d -> b h i d', attn, v)
@@ -55,9 +55,6 @@ def summarize_qkv_chunk(q, k, v, mask, causal_mask, attn_bias_chunk):
     if exists(attn_bias_chunk):
         weight = weight + attn_bias_chunk
 
-    weight_max = weight.amax(dim = -1, keepdim = True).detach()
-    weight = weight - weight_max
-
     mask_value = -torch.finfo(weight.dtype).max
 
     if exists(mask):
@@ -66,6 +63,9 @@ def summarize_qkv_chunk(q, k, v, mask, causal_mask, attn_bias_chunk):
 
     if exists(causal_mask):
         weight = weight.masked_fill(causal_mask, mask_value)
+
+    weight_max = weight.amax(dim = -1, keepdim = True).detach()
+    weight = weight - weight_max
 
     exp_weight = weight.exp()
     weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
