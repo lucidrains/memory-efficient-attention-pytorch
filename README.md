@@ -36,7 +36,7 @@ Cross attention
 import torch
 from memory_efficient_attention_pytorch import Attention
 
-attn = Attention(
+cross_attn = Attention(
     dim = 512,
     dim_head = 64,
     heads = 8,
@@ -49,7 +49,7 @@ x = torch.randn(1, 16384, 512).cuda()
 context = torch.randn(1, 16384, 512).cuda()
 mask = torch.ones(1, 16384).bool().cuda()
 
-out = attn(x, context = context, mask = mask) # (1, 16384, 512)
+out = cross_attn(x, context = context, mask = mask) # (1, 16384, 512)
 ```
 
 - [ ] add enwik8 example with 8192 context length
