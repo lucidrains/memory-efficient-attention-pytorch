@@ -1,1 +1,2 @@
 from memory_efficient_attention_pytorch.memory_efficient_attention import Attention
+from memory_efficient_attention_pytorch.memory_efficient_cosine_sim_attention import CosineSimAttention
