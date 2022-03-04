@@ -53,6 +53,8 @@ out = cross_attn(x, context = context, mask = mask) # (1, 16384, 512)
 ```
 
 - [ ] add enwik8 example with 8192 context length
+- [ ] offer version of memory efficient attention w/o numerical stability calculations, when used in conjunction with cosine sim attention from SwinV2 paper
+- [ ] benchmark and see how much torch jit helps
 
 ## Citations
 
