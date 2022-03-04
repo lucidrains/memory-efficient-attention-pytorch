@@ -1,4 +1,4 @@
-## Memory Efficient Attention Pytorch (wip)
+## Memory Efficient Attention Pytorch
 
 Implementation of a memory efficient multi-head attention as proposed in the paper, <a href="https://arxiv.org/abs/2112.05682">Self-attention Does Not Need O(n²) Memory</a>. In addition, the module will take care of masking, causal masking, as well as cross attention.
 
@@ -53,6 +53,7 @@ out = cross_attn(x, context = context, mask = mask) # (1, 65536, 512)
 ```
 
 - [ ] benchmark and see how much torch jit helps
+- [ ] look at Triton and Keops and see if either can be a fit
 
 ## Citations
 
