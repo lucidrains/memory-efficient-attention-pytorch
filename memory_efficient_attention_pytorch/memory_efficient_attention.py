@@ -61,9 +61,13 @@ def summarize_qkv_chunk(q, k, v, mask, causal_mask):
     if exists(causal_mask):
         weight = weight.masked_fill(causal_mask, mask_value)
 
+    weight_max = weight.amax(dim = -1, keepdim = True).detach()
+    weight = weight - weight_max
+
     exp_weight = weight.exp()
     weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
-    return exp_weight.sum(dim = -1), weighted_value
+
+    return exp_weight.sum(dim = -1), weighted_value, rearrange(weight_max, '... 1 -> ...')
 
 checkpointed_summarize_qkv_chunk = partial(checkpoint, summarize_qkv_chunk)
 
@@ -93,8 +97,9 @@ def memory_efficient_attention(
 
     out = []
     for q_index, q_chunk in enumerate(q_chunks):
-        exp_weights = None
-        weighted_values = None
+        exp_weights = []
+        weighted_values = []
+        weight_maxes = []
 
         for k_index, (k_chunk, v_chunk, mask_chunk) in enumerate(zip(k_chunks, v_chunks, mask_chunks)):
 
@@ -105,7 +110,7 @@ def memory_efficient_attention(
                     (k_index * k_bucket_size):(k_index * k_bucket_size + k_bucket_size),
                 ]
 
-            exp_weight_chunk, weighted_value_chunk = checkpointed_summarize_qkv_chunk(
+            exp_weight_chunk, weighted_value_chunk, weight_max_chunk = checkpointed_summarize_qkv_chunk(
                 q_chunk,
                 k_chunk,
                 v_chunk,
@@ -113,10 +118,25 @@ def memory_efficient_attention(
                 causal_mask_chunk
             )
 
-            exp_weights = safe_sum(exp_weights, exp_weight_chunk)
-            weighted_values = safe_sum(weighted_values, weighted_value_chunk)
+            exp_weights.append(exp_weight_chunk)
+            weighted_values.append(weighted_value_chunk)
+            weight_maxes.append(weight_max_chunk)
 
-        normalized_values = weighted_values / (rearrange(exp_weights, '... -> ... 1') + eps)
+        weight_maxes = torch.stack(weight_maxes, dim = -1)
+
+        weighted_values = torch.stack(weighted_values, dim = -1)
+        exp_weights = torch.stack(exp_weights, dim = -1)
+
+        global_max = weight_maxes.amax(dim = -1, keepdim = True)
+        renorm_factor = (weight_maxes - global_max).exp().detach()
+
+        exp_weights = exp_weights * renorm_factor
+        weighted_values = weighted_values * rearrange(renorm_factor, '... c -> ... 1 c')
+
+        all_values = weighted_values.sum(dim = -1)
+        all_weights = exp_weights.sum(dim = -1)
+
+        normalized_values = all_values / (rearrange(all_weights, '... -> ... 1') + eps)
         out.append(normalized_values)
 
     return torch.cat(out, dim = -2)
