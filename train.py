@@ -43,7 +43,9 @@ model = Transformer(
     depth = 8,
     heads = 8,
     causal = True,
-    memory_efficient = True
+    memory_efficient = True,
+    q_bucket_size = 512,
+    k_bucket_size = 512
 )
 
 model = AutoregressiveWrapper(model)
