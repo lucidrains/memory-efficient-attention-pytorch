@@ -52,7 +52,6 @@ mask = torch.ones(1, 65536).bool().cuda()
 out = cross_attn(x, context = context, mask = mask) # (1, 65536, 512)
 ```
 
-- [ ] add enwik8 example with 8192 context length
 - [ ] benchmark and see how much torch jit helps
 
 ## Citations
