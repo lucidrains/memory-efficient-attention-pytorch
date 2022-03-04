@@ -102,6 +102,10 @@ def memory_efficient_attention(
 
             causal_mask_chunk = causal_mask_chunks[q_index][k_index] if causal else None
 
+            if exists(causal_mask_chunk) and torch.all(causal_mask_chunk):
+                # if chunk is to be all masked out causally, skip
+                continue
+
             exp_weight_chunk, weighted_value_chunk, weight_max_chunk = checkpointed_summarize_qkv_chunk(
                 q_chunk,
                 k_chunk,
