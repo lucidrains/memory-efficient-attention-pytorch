@@ -26,8 +26,8 @@ attn = Attention(
     k_bucket_size = 2048          # bucket size along key / values dimension
 ).cuda()
 
-x = torch.randn(1, 16384, 512).cuda()
-out = attn(x) # (1, 16384, 512)
+x = torch.randn(1, 65536, 512).cuda()
+out = attn(x) # (1, 65536, 512)
 ```
 
 Cross attention
@@ -45,15 +45,14 @@ cross_attn = Attention(
     k_bucket_size = 2048
 ).cuda()
 
-x = torch.randn(1, 16384, 512).cuda()
-context = torch.randn(1, 16384, 512).cuda()
-mask = torch.ones(1, 16384).bool().cuda()
+x = torch.randn(1, 65536, 512).cuda()
+context = torch.randn(1, 65536, 512).cuda()
+mask = torch.ones(1, 65536).bool().cuda()
 
-out = cross_attn(x, context = context, mask = mask) # (1, 16384, 512)
+out = cross_attn(x, context = context, mask = mask) # (1, 65536, 512)
 ```
 
 - [ ] add enwik8 example with 8192 context length
-- [ ] offer version of memory efficient attention w/o numerical stability calculations, when used in conjunction with cosine sim attention from SwinV2 paper
 - [ ] benchmark and see how much torch jit helps
 
 ## Citations
