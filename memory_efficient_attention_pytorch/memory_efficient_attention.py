@@ -86,6 +86,11 @@ def memory_efficient_attention(
     scale = q.shape[-1] ** -0.5
     q = q * scale
 
+    # function
+
+    needs_backwards = q.requires_grad or k.requires_grad or v.requires_grad
+    summarize_qkv_fn = checkpointed_summarize_qkv_chunk if needs_backwards else summarize_qkv_chunk
+
     # chunk all the inputs
 
     q_chunks = q.split(q_bucket_size, dim = -2)
@@ -122,7 +127,7 @@ def memory_efficient_attention(
 
             attn_bias_chunk = attn_bias_chunks[q_index][k_index] if exists(attn_bias) else None
 
-            exp_weight_chunk, weighted_value_chunk, weight_max_chunk = checkpointed_summarize_qkv_chunk(
+            exp_weight_chunk, weighted_value_chunk, weight_max_chunk = summarize_qkv_fn(
                 q_chunk,
                 k_chunk,
                 v_chunk,

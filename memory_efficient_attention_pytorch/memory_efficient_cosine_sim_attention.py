@@ -81,6 +81,9 @@ def numerically_unstable_memory_efficient_attention(
     k_bucket_size = 1024,
     eps = 1e-8
 ):
+    needs_backwards = q.requires_grad or k.requires_grad or v.requires_grad
+    summarize_qkv_fn = checkpointed_summarize_qkv_chunk if needs_backwards else summarize_qkv_chunk
+
     # chunk all the inputs
 
     q_chunks = q.split(q_bucket_size, dim = -2)
@@ -116,7 +119,7 @@ def numerically_unstable_memory_efficient_attention(
 
             attn_bias_chunk = attn_bias_chunks[q_index][k_index] if exists(attn_bias) else None
 
-            exp_weight_chunk, weighted_value_chunk = checkpointed_summarize_qkv_chunk(
+            exp_weight_chunk, weighted_value_chunk = summarize_qkv_fn(
                 q_chunk,
                 k_chunk,
                 v_chunk,
