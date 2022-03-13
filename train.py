@@ -18,7 +18,7 @@ GRADIENT_ACCUMULATE_EVERY = 4
 LEARNING_RATE = 2e-4
 VALIDATE_EVERY  = 100
 GENERATE_EVERY  = 500
-GENERATE_LENGTH = 2048
+GENERATE_LENGTH = 4096
 SEQ_LEN = 4096
 
 # helpers
@@ -40,12 +40,13 @@ model = Transformer(
     num_tokens = 256,
     dim = 512,
     max_seq_len = SEQ_LEN,
-    depth = 8,
+    depth = 6,
     heads = 8,
     causal = True,
     memory_efficient = True,
-    q_bucket_size = 512,
-    k_bucket_size = 512
+    q_bucket_size = 256,
+    k_bucket_size = 256,
+    ff_chunks = 5
 )
 
 model = AutoregressiveWrapper(model)

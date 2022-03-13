@@ -19,12 +19,24 @@ class PreNorm(nn.Module):
         x = self.norm(x)
         return self.fn(x, **kwargs)
 
-def FeedForward(dim, mult = 4):
-    return nn.Sequential(
-        nn.Linear(dim, dim * mult),
-        nn.GELU(),
-        nn.Linear(dim * mult, dim)
-    )
+class FeedForward(nn.Module):
+    def __init__(self, dim, mult = 4, chunks = 1):
+        super().__init__()
+        self.chunks = chunks
+
+        self.net = nn.Sequential(
+            nn.Linear(dim, dim * mult),
+            nn.GELU(),
+            nn.Linear(dim * mult, dim)
+        )
+
+    def forward(self, x):
+        if self.chunks <= 1:
+            return self.net(x)
+
+        chunks = x.chunk(self.chunks, dim = 1)
+        out = [self.net(chunk) for chunk in chunks]
+        return torch.cat(out, dim = 1)
 
 class Transformer(nn.Module):
     def __init__(
@@ -38,6 +50,7 @@ class Transformer(nn.Module):
         dim_head = 64,
         heads = 8,
         ff_mult = 4,
+        ff_chunks = 1,
         **kwargs
     ):
         super().__init__()
@@ -50,7 +63,7 @@ class Transformer(nn.Module):
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
                 PreNorm(dim, Attention(dim = dim, dim_head = dim_head, heads = heads, causal = causal, **kwargs)),
-                PreNorm(dim, FeedForward(dim = dim, mult = ff_mult)),
+                PreNorm(dim, FeedForward(dim = dim, mult = ff_mult, chunks = ff_chunks)),
             ]))
 
         self.net = ReversibleSequence(self.layers)
