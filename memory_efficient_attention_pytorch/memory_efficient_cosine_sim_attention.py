@@ -50,7 +50,9 @@ def attention(
 
 # memory efficient attention
 
-def summarize_qkv_chunk(q, k, v, mask, causal_mask, attn_bias_chunk):
+def summarize_qkv_chunk(q, k, v, mask, attn_bias_chunk, causal, qk_start_indices):
+    q_start_index, k_start_index, q_chunk_size, k_chunk_size, device = *qk_start_indices, q.shape[-2], k.shape[-2], q.device
+
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
 
     if exists(attn_bias_chunk):
@@ -62,7 +64,10 @@ def summarize_qkv_chunk(q, k, v, mask, causal_mask, attn_bias_chunk):
         mask = rearrange(mask, 'b j -> b 1 1 j')
         weight = weight.masked_fill(~mask, mask_value)
 
-    if exists(causal_mask):
+    if causal and q_start_index < (k_start_index + k_chunk_size - 1):
+        q_range = torch.arange(q_start_index, q_start_index + q_chunk_size, device = device)
+        k_range = torch.arange(k_start_index, k_start_index + k_chunk_size, device = device)
+        causal_mask = rearrange(q_range, 'i -> i 1') < rearrange(k_range, 'j -> 1 j')
         weight = weight.masked_fill(causal_mask, mask_value)
 
     exp_weight = weight.exp()
@@ -91,12 +96,6 @@ def numerically_unstable_memory_efficient_attention(
     v_chunks = v.split(k_bucket_size, dim = -2)
     mask_chunks = mask.split(k_bucket_size, dim = -1) if exists(mask) else ((None,) * len(k_chunks))
 
-    if causal:
-        i, j = q.shape[-2], k.shape[-2]
-        causal_mask = torch.ones(i, j, device = q.device, dtype = torch.bool).triu(j - i + 1)
-        causal_mask_chunks = causal_mask.split(q_bucket_size, dim = 0)
-        causal_mask_chunks = list(map(lambda t: t.split(k_bucket_size, dim = -1), causal_mask_chunks))
-
     if exists(attn_bias):
         i, j = attn_bias.shape[-2:]
         attn_bias_chunks = attn_bias.split(q_bucket_size, dim = -2)
@@ -106,14 +105,14 @@ def numerically_unstable_memory_efficient_attention(
 
     out = []
     for q_index, q_chunk in enumerate(q_chunks):
+        q_start_index = q_index * q_bucket_size
         exp_weights = []
         weighted_values = []        
 
         for k_index, (k_chunk, v_chunk, mask_chunk) in enumerate(zip(k_chunks, v_chunks, mask_chunks)):
+            k_start_index = k_index * k_bucket_size
 
-            causal_mask_chunk = causal_mask_chunks[q_index][k_index] if causal else None
-
-            if exists(causal_mask_chunk) and torch.all(causal_mask_chunk):
+            if causal and k_start_index > (q_start_index + q_chunk.shape[-2] - 1):
                 # if chunk is to be all masked out causally, skip
                 continue
 
@@ -124,8 +123,9 @@ def numerically_unstable_memory_efficient_attention(
                 k_chunk,
                 v_chunk,
                 mask_chunk,
-                causal_mask_chunk,
-                attn_bias_chunk
+                attn_bias_chunk,
+                causal,
+                (q_start_index, k_start_index)
             )
 
             exp_weights.append(exp_weight_chunk)
