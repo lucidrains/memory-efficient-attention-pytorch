@@ -64,9 +64,7 @@ def summarize_qkv_chunk(q, k, v, mask, attn_bias_chunk, causal, qk_start_indices
         weight = weight.masked_fill(~mask, mask_value)
 
     if causal and q_start_index < (k_start_index + k_chunk_size - 1):
-        q_range = torch.arange(q_start_index, q_start_index + q_chunk_size, device = device)
-        k_range = torch.arange(k_start_index, k_start_index + k_chunk_size, device = device)
-        causal_mask = rearrange(q_range, 'i -> i 1') < rearrange(k_range, 'j -> 1 j')
+        causal_mask = torch.ones((q_chunk_size, k_chunk_size), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
         weight = weight.masked_fill(causal_mask, mask_value)
 
     weight_max = weight.amax(dim = -1, keepdim = True).detach()
