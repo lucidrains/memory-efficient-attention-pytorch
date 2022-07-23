@@ -65,7 +65,7 @@ class FlashAttentionFunction(Function):
                     attn_weights.masked_fill_(~row_mask, max_neg_value)
 
                 if causal and q_start_index < (k_start_index + k_bucket_size - 1):
-                    causal_mask = torch.ones((q_bucket_size, k_bucket_size), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
+                    causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
                     attn_weights.masked_fill_(causal_mask, max_neg_value)
 
                 block_row_maxes = attn_weights.amax(dim = -1, keepdims = True)
@@ -143,7 +143,7 @@ class FlashAttentionFunction(Function):
                 attn_weights = einsum('... i d, ... j d -> ... i j', qc_scaled, kc)
 
                 if causal and q_start_index < (k_start_index + k_bucket_size - 1):
-                    causal_mask = torch.ones((q_bucket_size, k_bucket_size), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
+                    causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
                     attn_weights.masked_fill_(causal_mask, max_neg_value)
 
                 exp_attn_weights = torch.exp(attn_weights - mc)
@@ -156,7 +156,7 @@ class FlashAttentionFunction(Function):
                 dv_chunk = einsum('... i j, ... i d -> ... j d', p, doc)
                 dp = einsum('... i d, ... j d -> ... i j', doc, vc)
 
-                D = (do * o).sum(dim = -1, keepdims = True)
+                D = (doc * oc).sum(dim = -1, keepdims = True)
                 ds = p * scale * (dp - D)
 
                 dq_chunk = einsum('... i j, ... j d -> ... i d', ds, kc)
