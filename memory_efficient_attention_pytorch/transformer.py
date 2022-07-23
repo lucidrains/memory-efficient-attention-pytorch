@@ -3,7 +3,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 
 from einops import rearrange
-from memory_efficient_attention_pytorch import Attention
+from memory_efficient_attention_pytorch import FlashAttention, Attention
 from memory_efficient_attention_pytorch.reversible import ReversibleSequence
 
 def exists(val):
@@ -51,6 +51,7 @@ class Transformer(nn.Module):
         heads = 8,
         ff_mult = 4,
         ff_chunks = 1,
+        use_flash_attn = True,
         **kwargs
     ):
         super().__init__()
@@ -59,10 +60,12 @@ class Transformer(nn.Module):
         self.token_emb = nn.Embedding(num_tokens, dim)
         self.pos_emb = nn.Embedding(max_seq_len, dim)
 
+        attn_klass = FlashAttention if use_flash_attn else partial(Attention, memory_efficient = True)
+
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                PreNorm(dim, Attention(dim = dim, dim_head = dim_head, heads = heads, causal = causal, **kwargs)),
+                PreNorm(dim, FlashAttention(dim = dim, dim_head = dim_head, heads = heads, causal = causal, **kwargs)),
                 PreNorm(dim, FeedForward(dim = dim, mult = ff_mult, chunks = ff_chunks)),
             ]))
 
