@@ -52,9 +52,6 @@ mask = torch.ones(1, 65536).bool().cuda()
 out = cross_attn(x, context = context, mask = mask) # (1, 65536, 512)
 ```
 
-- [ ] benchmark and see how much torch jit helps
-- [ ] look at Triton and Keops and see if either can be a fit
-
 ## Citations
 
 ```bibtex
@@ -76,5 +73,15 @@ out = cross_attn(x, context = context, mask = mask) # (1, 65536, 512)
     eprint  = {2111.09883},
     archivePrefix = {arXiv},
     primaryClass = {cs.CV}
+}
+```
+
+```bibtex
+@article{Dao2022FlashAttentionFA,
+    title   = {FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness},
+    author  = {Tri Dao and Daniel Y. Fu and Stefano Ermon and Atri Rudra and Christopher R'e},
+    journal = {ArXiv},
+    year    = {2022},
+    volume  = {abs/2205.14135}
 }
 ```
