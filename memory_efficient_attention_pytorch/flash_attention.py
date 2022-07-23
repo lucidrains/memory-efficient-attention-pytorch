@@ -37,12 +37,12 @@ class FlashAttentionFunction(Function):
         all_row_maxes = torch.full((*q.shape[:-1], 1), max_neg_value, device = device)
 
         scale = (q.shape[-1] ** -0.5)
-        q = q * scale
 
         if not exists(mask):
             mask = (None,) * math.ceil(q.shape[-2] / q_bucket_size)
         else:
-            mask = mask.split(q_bucket_size, dim = -2)
+            mask = rearrange(mask, 'b n -> b 1 1 n')
+            mask = mask.split(q_bucket_size, dim = -1)
 
         row_splits = zip(
             q.split(q_bucket_size, dim = -2),
@@ -63,7 +63,7 @@ class FlashAttentionFunction(Function):
             for k_ind, (kc, vc) in enumerate(col_splits):
                 k_start_index = k_ind * k_bucket_size
 
-                attn_weights = einsum('... i d, ... j d -> ... i j', qc, kc)
+                attn_weights = einsum('... i d, ... j d -> ... i j', qc, kc) * scale
 
                 if exists(row_mask):
                     attn_weights.masked_fill_(~row_mask, max_neg_value)
@@ -73,7 +73,6 @@ class FlashAttentionFunction(Function):
                     attn_weights.masked_fill_(causal_mask, max_neg_value)
 
                 block_row_maxes = attn_weights.amax(dim = -1, keepdims = True)
-
                 attn_weights -= block_row_maxes
                 exp_weights = torch.exp(attn_weights)
 
@@ -82,7 +81,7 @@ class FlashAttentionFunction(Function):
 
                 block_row_sums = exp_weights.sum(dim = -1, keepdims = True).clamp(min = EPSILON)
 
-                new_row_maxes = torch.maximum(block_row_maxes, row_sums)
+                new_row_maxes = torch.maximum(block_row_maxes, row_maxes)
 
                 exp_values = einsum('... i j, ... j d -> ... i d', exp_weights, vc)
 
@@ -92,10 +91,11 @@ class FlashAttentionFunction(Function):
                 new_row_sums = exp_row_max_diff * row_sums + exp_block_row_max_diff * block_row_sums
 
                 oc.mul_((row_sums / new_row_sums) * exp_row_max_diff).add_((exp_block_row_max_diff / new_row_sums) * exp_values)
+
                 row_maxes.copy_(new_row_maxes)
                 row_sums.copy_(new_row_sums)
 
-        ctx.args = (causal, mask, q_bucket_size, k_bucket_size)
+        ctx.args = (causal, scale, mask, q_bucket_size, k_bucket_size)
         ctx.save_for_backward(q, k, v, o, all_row_sums, all_row_maxes)
 
         return o
@@ -105,7 +105,7 @@ class FlashAttentionFunction(Function):
     def backward(ctx, do):
         """ Algorithm 4 in the paper """
 
-        causal, mask, q_bucket_size, k_bucket_size = ctx.args
+        causal, scale, mask, q_bucket_size, k_bucket_size = ctx.args
         q, k, v, o, l, m = ctx.saved_tensors
 
         device = q.device
@@ -116,8 +116,6 @@ class FlashAttentionFunction(Function):
         dq = torch.zeros_like(q)
         dk = torch.zeros_like(k)
         dv = torch.zeros_like(v)
-
-        scale = q.shape[-1] ** -0.5
 
         row_splits = zip(
             q.split(q_bucket_size, dim = -2),
@@ -142,8 +140,7 @@ class FlashAttentionFunction(Function):
             for k_ind, (kc, vc, dkc, dvc) in enumerate(col_splits):
                 k_start_index = k_ind * k_bucket_size
 
-                qc_scaled = qc * scale
-                attn_weights = einsum('... i d, ... j d -> ... i j', qc_scaled, kc)
+                attn_weights = einsum('... i d, ... j d -> ... i j', qc, kc) * scale
 
                 if causal and q_start_index < (k_start_index + k_bucket_size - 1):
                     causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
@@ -197,7 +194,7 @@ class FlashAttention(nn.Module):
 
         self.to_q = nn.Linear(dim, inner_dim, bias = False)
         self.to_kv = nn.Linear(dim, inner_dim * 2, bias = False)
-        self.to_out = nn.Linear(inner_dim, dim)
+        self.to_out = nn.Linear(inner_dim, dim, bias = False)
 
         # memory efficient attention related parameters
         # can be overriden on forward

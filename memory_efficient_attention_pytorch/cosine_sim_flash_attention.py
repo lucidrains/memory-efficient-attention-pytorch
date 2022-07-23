@@ -42,7 +42,8 @@ class FlashAttentionFunction(Function):
         if not exists(mask):
             mask = (None,) * math.ceil(q.shape[-2] / q_bucket_size)
         else:
-            mask = mask.split(q_bucket_size, dim = -2)
+            mask = rearrange(mask, 'b n -> b 1 1 n')
+            mask = mask.split(q_bucket_size, dim = -1)
 
         row_splits = zip(
             q.split(q_bucket_size, dim = -2),
@@ -184,7 +185,7 @@ class FlashAttention(nn.Module):
 
         self.to_q = nn.Linear(dim, inner_dim, bias = False)
         self.to_kv = nn.Linear(dim, inner_dim * 2, bias = False)
-        self.to_out = nn.Linear(inner_dim, dim)
+        self.to_out = nn.Linear(inner_dim, dim, bias = False)
 
         # memory efficient attention related parameters
         # can be overriden on forward
