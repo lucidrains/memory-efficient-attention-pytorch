@@ -20,10 +20,14 @@ def default(val, d):
 
 # flash attention forwards and backwards
 
+# https://arxiv.org/abs/2205.14135
+
 class FlashAttentionFunction(Function):
     @staticmethod
     @torch.no_grad()
     def forward(ctx, q, k, v, mask, causal, q_bucket_size, k_bucket_size):
+        """ Algorithm 2 in the paper """
+
         device = q.device
         max_neg_value = -torch.finfo(q.dtype).max
         qk_len_diff = max(k.shape[-2] - q.shape[-2], 0)
@@ -87,10 +91,7 @@ class FlashAttentionFunction(Function):
 
                 new_row_sums = exp_row_max_diff * row_sums + exp_block_row_max_diff * block_row_sums
 
-                out = (row_sums / new_row_sums) * exp_row_max_diff * oc + \
-                      (exp_block_row_max_diff / new_row_sums) * exp_values
-
-                oc.copy_(out)
+                oc.mul_((row_sums / new_row_sums) * exp_row_max_diff).add_((exp_block_row_max_diff / new_row_sums) * exp_values)
                 row_maxes.copy_(new_row_maxes)
                 row_sums.copy_(new_row_sums)
 
@@ -102,6 +103,8 @@ class FlashAttentionFunction(Function):
     @staticmethod
     @torch.no_grad()
     def backward(ctx, do):
+        """ Algorithm 4 in the paper """
+
         causal, mask, q_bucket_size, k_bucket_size = ctx.args
         q, k, v, o, l, m = ctx.saved_tensors
 
