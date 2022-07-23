@@ -91,7 +91,9 @@ def test_flash_attn_gradients_equal():
     k = torch.randn(1, 8, 1024, 512).requires_grad_()
     v = torch.randn(1, 8, 1024, 512).requires_grad_()
 
-    o = attention(q, k, v, causal = False)
+    mask = torch.ones(1, 1024).bool()
+
+    o = attention(q, k, v, mask = mask, causal = True)
     o.sum().backward()
 
     dq_grad = q.grad.clone()
@@ -102,7 +104,7 @@ def test_flash_attn_gradients_equal():
     k.grad.zero_()
     v.grad.zero_()
 
-    flash_o = FlashAttentionFunction.apply(q, k, v, None, False, 64, 64)
+    flash_o = FlashAttentionFunction.apply(q, k, v, mask, True, 64, 64)
     flash_o.sum().backward()
 
     flash_dq_grad = q.grad.clone()
