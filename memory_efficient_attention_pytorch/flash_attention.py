@@ -95,8 +95,10 @@ class FlashAttentionFunction(Function):
                 row_maxes.copy_(new_row_maxes)
                 row_sums.copy_(new_row_sums)
 
+        lse = all_row_sums.log() + all_row_maxes
+
         ctx.args = (causal, scale, mask, q_bucket_size, k_bucket_size)
-        ctx.save_for_backward(q, k, v, o, all_row_sums, all_row_maxes)
+        ctx.save_for_backward(q, k, v, o, lse)
 
         return o
 
@@ -106,7 +108,7 @@ class FlashAttentionFunction(Function):
         """ Algorithm 4 in the paper """
 
         causal, scale, mask, q_bucket_size, k_bucket_size = ctx.args
-        q, k, v, o, l, m = ctx.saved_tensors
+        q, k, v, o, lse = ctx.saved_tensors
 
         device = q.device
 
@@ -122,12 +124,11 @@ class FlashAttentionFunction(Function):
             o.split(q_bucket_size, dim = -2),
             do.split(q_bucket_size, dim = -2),
             mask,
-            l.split(q_bucket_size, dim = -2),
-            m.split(q_bucket_size, dim = -2),
+            lse.split(q_bucket_size, dim = -2),
             dq.split(q_bucket_size, dim = -2)
         )
 
-        for ind, (qc, oc, doc, row_mask, lc, mc, dqc) in enumerate(row_splits):
+        for ind, (qc, oc, doc, row_mask, lsec, dqc) in enumerate(row_splits):
             q_start_index = ind * q_bucket_size - qk_len_diff
 
             col_splits = zip(
@@ -146,12 +147,10 @@ class FlashAttentionFunction(Function):
                     causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
                     attn_weights.masked_fill_(causal_mask, max_neg_value)
 
-                exp_attn_weights = torch.exp(attn_weights - mc)
+                p = torch.exp(attn_weights - lsec)
 
                 if exists(row_mask):
-                    exp_attn_weights.masked_fill_(~row_mask, 0.)
-
-                p = exp_attn_weights / lc
+                    p.masked_fill_(~row_mask, 0.)
 
                 dv_chunk = einsum('... i j, ... i d -> ... j d', p, doc)
                 dp = einsum('... i d, ... j d -> ... i j', doc, vc)
