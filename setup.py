@@ -23,7 +23,8 @@ setup(
     'pytest-runner',
   ],
   tests_require=[
-    'pytest'
+    'pytest',
+    'torch==1.12.1'    
   ],
   classifiers=[
     'Development Status :: 4 - Beta',
