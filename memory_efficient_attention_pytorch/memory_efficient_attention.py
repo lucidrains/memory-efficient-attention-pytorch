@@ -2,6 +2,7 @@ import torch
 from functools import partial
 from torch import nn, einsum
 from torch.utils.checkpoint import checkpoint
+import torch.nn.functional as F
 
 from einops import rearrange
 
@@ -49,7 +50,7 @@ def attention(
 
 # memory efficient attention
 
-def summarize_qkv_chunk(q, k, v, mask, attn_bias_chunk, causal, qk_start_indices):
+def summarize_qkv_chunk(q, k, v, mask, attn_bias_chunk, causal, qk_start_indices, dropout=0., training=False):
     q_start_index, k_start_index, q_chunk_size, k_chunk_size, device = *qk_start_indices, q.shape[-2], k.shape[-2], q.device
 
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
@@ -71,6 +72,8 @@ def summarize_qkv_chunk(q, k, v, mask, attn_bias_chunk, causal, qk_start_indices
     weight = weight - weight_max
 
     exp_weight = weight.exp()
+    if training:
+        exp_weight = F.dropout(exp_weight, p=dropout, training=training)
     weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
 
     return exp_weight.sum(dim = -1), weighted_value, rearrange(weight_max, '... 1 -> ...')
@@ -84,7 +87,9 @@ def memory_efficient_attention(
     attn_bias = None,
     q_bucket_size = 512,
     k_bucket_size = 1024,
-    eps = 1e-8
+    eps = 1e-8,
+    dropout = 0.,
+    training = False
 ):
     scale = q.shape[-1] ** -0.5
     q = q * scale
@@ -131,7 +136,9 @@ def memory_efficient_attention(
                 mask_chunk,
                 attn_bias_chunk,
                 causal,
-                (q_start_index, k_start_index)
+                (q_start_index, k_start_index),
+                dropout = dropout,
+                training = training
             )
 
             exp_weights.append(exp_weight_chunk)
@@ -175,7 +182,7 @@ class Attention(nn.Module):
         super().__init__()
         self.heads = heads
         self.causal = causal
-
+        self.dropout = dropout
         inner_dim = heads * dim_head
 
         self.to_q = nn.Linear(dim, inner_dim, bias = False)
@@ -212,7 +219,8 @@ class Attention(nn.Module):
 
         attn_fn = attention if not memory_efficient else memory_efficient_attention
 
-        out = attn_fn(q, k, v, mask = mask, attn_bias = attn_bias, causal = self.causal, q_bucket_size = q_bucket_size, k_bucket_size = k_bucket_size)
+        out = attn_fn(q, k, v, mask = mask, attn_bias = attn_bias, causal = self.causal, q_bucket_size = q_bucket_size, 
+                    k_bucket_size = k_bucket_size, dropout = self.dropout, training = self.training)
 
         out = rearrange(out, 'b h n d -> b n (h d)')
         return self.to_out(out)
