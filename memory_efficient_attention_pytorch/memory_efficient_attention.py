@@ -50,7 +50,7 @@ def attention(
 
 # memory efficient attention
 
-def summarize_qkv_chunk(q, k, v, mask, attn_bias_chunk, causal, qk_start_indices, dropout=0., training=False):
+def summarize_qkv_chunk(q, k, v, mask, attn_bias_chunk, causal, qk_start_indices, dropout):
     q_start_index, k_start_index, q_chunk_size, k_chunk_size, device = *qk_start_indices, q.shape[-2], k.shape[-2], q.device
 
     weight = einsum('b h i d, b h j d -> b h i j', q, k)
@@ -72,8 +72,9 @@ def summarize_qkv_chunk(q, k, v, mask, attn_bias_chunk, causal, qk_start_indices
     weight = weight - weight_max
 
     exp_weight = weight.exp()
-    if training:
-        exp_weight = F.dropout(exp_weight, p=dropout, training=training)
+
+    exp_weight = F.dropout(exp_weight, p = dropout)
+
     weighted_value = einsum('b h i j, b h j d -> b h i d', exp_weight, v)
 
     return exp_weight.sum(dim = -1), weighted_value, rearrange(weight_max, '... 1 -> ...')
@@ -137,8 +138,7 @@ def memory_efficient_attention(
                 attn_bias_chunk,
                 causal,
                 (q_start_index, k_start_index),
-                dropout = dropout,
-                training = training
+                dropout if training else 0.
             )
 
             exp_weights.append(exp_weight_chunk)
