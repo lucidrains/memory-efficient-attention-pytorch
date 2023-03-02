@@ -1,6 +1,7 @@
 import torch
 from torch import nn, einsum
 import torch.nn.functional as F
+from functools import partial
 
 from einops import rearrange
 from memory_efficient_attention_pytorch import FlashAttention, Attention
