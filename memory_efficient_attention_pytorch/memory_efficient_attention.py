@@ -34,7 +34,8 @@ def attention(
     mask_value = -torch.finfo(sim.dtype).max
 
     if exists(mask):
-        mask = rearrange(mask, 'b j -> b 1 1 j')
+        if mask.ndim == 2:
+            mask = rearrange(mask, 'b j -> b 1 1 j')
         sim = sim.masked_fill(~mask, mask_value)
 
     if causal:

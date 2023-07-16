@@ -38,11 +38,18 @@ class FlashAttentionFunction(Function):
 
         scale = (q.shape[-1] ** -0.5)
 
-        if not exists(mask):
-            mask = (None,) * math.ceil(q.shape[-2] / q_bucket_size)
-        else:
+        num_row_tiles = math.ceil(q.shape[-2] / q_bucket_size)
+        num_col_tiles = math.ceil(k.shape[-2] / k_bucket_size)
+
+        if exists(mask) and mask.ndim == 2:
             mask = rearrange(mask, 'b n -> b 1 1 n')
-            mask = mask.split(q_bucket_size, dim = -1)
+
+        if not exists(mask):
+            col_masks = (None,) * num_col_tiles
+            mask = (col_masks,) * num_row_tiles 
+        else:
+            mask = ((mask,) * num_row_tiles) if mask.shape[-2] == 1 else mask.split(q_bucket_size, dim = -2)
+            mask = tuple(((row_mask,) * num_col_tiles) if row_mask.shape[-1] == 1 else row_mask.split(k_bucket_size, dim = -1) for row_mask in mask)
 
         row_splits = zip(
             q.split(q_bucket_size, dim = -2),
@@ -58,15 +65,16 @@ class FlashAttentionFunction(Function):
             col_splits = zip(
                 k.split(k_bucket_size, dim = -2),
                 v.split(k_bucket_size, dim = -2),
+                row_mask
             )
 
-            for k_ind, (kc, vc) in enumerate(col_splits):
+            for k_ind, (kc, vc, col_mask) in enumerate(col_splits):
                 k_start_index = k_ind * k_bucket_size
 
                 attn_weights = einsum('... i d, ... j d -> ... i j', qc, kc) * scale
 
-                if exists(row_mask):
-                    attn_weights.masked_fill_(~row_mask, max_neg_value)
+                if exists(col_mask):
+                    attn_weights.masked_fill_(~col_mask, max_neg_value)
 
                 if causal and q_start_index < (k_start_index + k_bucket_size - 1):
                     causal_mask = torch.ones((qc.shape[-2], kc.shape[-2]), dtype = torch.bool, device = device).triu(q_start_index - k_start_index + 1)
@@ -76,8 +84,8 @@ class FlashAttentionFunction(Function):
                 attn_weights -= block_row_maxes
                 exp_weights = torch.exp(attn_weights)
 
-                if exists(row_mask):
-                    exp_weights.masked_fill_(~row_mask, 0.)
+                if exists(col_mask):
+                    exp_weights.masked_fill_(~col_mask, 0.)
 
                 block_row_sums = exp_weights.sum(dim = -1, keepdims = True).clamp(min = EPSILON)
 
@@ -136,9 +144,10 @@ class FlashAttentionFunction(Function):
                 v.split(k_bucket_size, dim = -2),
                 dk.split(k_bucket_size, dim = -2),
                 dv.split(k_bucket_size, dim = -2),
+                row_mask
             )
 
-            for k_ind, (kc, vc, dkc, dvc) in enumerate(col_splits):
+            for k_ind, (kc, vc, dkc, dvc, col_mask) in enumerate(col_splits):
                 k_start_index = k_ind * k_bucket_size
 
                 attn_weights = einsum('... i d, ... j d -> ... i j', qc, kc) * scale
@@ -149,8 +158,8 @@ class FlashAttentionFunction(Function):
 
                 p = torch.exp(attn_weights - lsec)
 
-                if exists(row_mask):
-                    p.masked_fill_(~row_mask, 0.)
+                if exists(col_mask):
+                    p.masked_fill_(~col_mask, 0.)
 
                 dv_chunk = einsum('... i j, ... i d -> ... j d', p, doc)
                 dp = einsum('... i d, ... j d -> ... i j', doc, vc)
@@ -186,7 +195,6 @@ class FlashAttention(nn.Module):
     ):
         super().__init__()
         self.heads = heads
-
         self.causal = causal
 
         inner_dim = heads * dim_head
