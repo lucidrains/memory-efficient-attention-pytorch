@@ -8,7 +8,7 @@ from einops import rearrange
 
 # constants
 
-EPSILON = 1e-6
+EPSILON = 1e-10
 
 # helper functions
 
@@ -81,24 +81,22 @@ class FlashAttentionFunction(Function):
                     attn_weights.masked_fill_(causal_mask, max_neg_value)
 
                 block_row_maxes = attn_weights.amax(dim = -1, keepdims = True)
-                attn_weights -= block_row_maxes
-                exp_weights = torch.exp(attn_weights)
+                new_row_maxes = torch.maximum(block_row_maxes, row_maxes)
+
+                exp_weights = torch.exp(attn_weights - new_row_maxes)
 
                 if exists(col_mask):
                     exp_weights.masked_fill_(~col_mask, 0.)
 
                 block_row_sums = exp_weights.sum(dim = -1, keepdims = True).clamp(min = EPSILON)
 
-                new_row_maxes = torch.maximum(block_row_maxes, row_maxes)
-
                 exp_values = einsum('... i j, ... j d -> ... i d', exp_weights, vc)
 
                 exp_row_max_diff = torch.exp(row_maxes - new_row_maxes)
-                exp_block_row_max_diff = torch.exp(block_row_maxes - new_row_maxes)
 
-                new_row_sums = exp_row_max_diff * row_sums + exp_block_row_max_diff * block_row_sums
+                new_row_sums = exp_row_max_diff * row_sums + block_row_sums
 
-                oc.mul_(exp_row_max_diff).add_(exp_block_row_max_diff * exp_values)
+                oc.mul_(exp_row_max_diff).add_(exp_values)
 
                 row_maxes.copy_(new_row_maxes)
                 row_sums.copy_(new_row_sums)
