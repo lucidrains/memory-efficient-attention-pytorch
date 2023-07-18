@@ -98,10 +98,12 @@ class FlashAttentionFunction(Function):
 
                 new_row_sums = exp_row_max_diff * row_sums + exp_block_row_max_diff * block_row_sums
 
-                oc.mul_((row_sums / new_row_sums) * exp_row_max_diff).add_((exp_block_row_max_diff / new_row_sums) * exp_values)
+                oc.mul_(exp_row_max_diff).add_(exp_block_row_max_diff * exp_values)
 
                 row_maxes.copy_(new_row_maxes)
                 row_sums.copy_(new_row_sums)
+
+            oc.div_(row_sums)
 
         lse = all_row_sums.log() + all_row_maxes
 
