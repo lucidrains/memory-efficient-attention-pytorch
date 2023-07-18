@@ -20,13 +20,14 @@ def default(val, d):
 
 # flash attention forwards and backwards
 
-# https://arxiv.org/abs/2205.14135
+# flash attention v1 - https://arxiv.org/abs/2205.14135
+# flash attention v2 - https://tridao.me/publications/flash2/flash2.pdf
 
 class FlashAttentionFunction(Function):
     @staticmethod
     @torch.no_grad()
     def forward(ctx, q, k, v, mask, causal, q_bucket_size, k_bucket_size):
-        """ Algorithm 2 in the paper """
+        """ Algorithm 1 in the v2 paper """
 
         device = q.device
         max_neg_value = -torch.finfo(q.dtype).max
@@ -113,7 +114,7 @@ class FlashAttentionFunction(Function):
     @staticmethod
     @torch.no_grad()
     def backward(ctx, do):
-        """ Algorithm 4 in the paper """
+        """ Algorithm 2 in the v2 paper """
 
         causal, scale, mask, q_bucket_size, k_bucket_size = ctx.args
         q, k, v, o, lse = ctx.saved_tensors
