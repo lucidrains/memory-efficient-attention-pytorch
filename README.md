@@ -4,7 +4,7 @@ Implementation of a memory efficient multi-head attention as proposed in the pap
 
 This repository also contains a <a href="https://github.com/lucidrains/memory-efficient-attention-pytorch/blob/main/memory_efficient_attention_pytorch/flash_attention.py">naive non-CUDA implementation</a> of the improvements made by <a href="https://tridao.me/">Tri Dao</a> with his <a href="https://github.com/HazyResearch/flash-attention">Flash Attention 2</a> paper, for educational purposes. It is a game changer for attention and building long-context transformers.
 
-Update: from now on, you should just be using the <a href="https://pytorch.org/docs/master/generated/torch.nn.functional.scaled_dot_product_attention.html?highlight=scaled_dot_product#torch.nn.functional.scaled_dot_product_attention">`F.scaled_dot_product_attention`</a> function in Pytorch 2.0
+Update: from now on, you should just be using the <a href="https://pytorch.org/docs/master/generated/torch.nn.functional.scaled_dot_product_attention.html?highlight=scaled_dot_product#torch.nn.functional.scaled_dot_product_attention">`F.scaled_dot_product_attention`</a> function in Pytorch 2.0 for built-in Flash Attention v1 support - or use Flash Attention v2 at the <a href="https://github.com/Dao-AILab/flash-attention">official repository</a>
 
 ## Install
 
